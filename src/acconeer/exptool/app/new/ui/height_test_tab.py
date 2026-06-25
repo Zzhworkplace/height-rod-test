@@ -108,6 +108,8 @@ class HeightTestWidget(QWidget):
         self._last_mean: float = 0.0
         self._last_stats: dict = {}
         self._snap_count = 0
+        self._unit_cm = True  # True=cm, False=mm
+        self._last_raw_m: float = 0.0  # cached raw distance in meters for unit switch
 
         self._build_ui()
         self._update_ui_state()
@@ -187,6 +189,57 @@ class HeightTestWidget(QWidget):
         )
         top_bar.addWidget(self._lbl_status)
         top_bar.addStretch()
+
+        # --- Segmented unit switch (cm | mm) ---
+        seg_layout = QHBoxLayout()
+        seg_layout.setContentsMargins(0, 0, 0, 0)
+        seg_layout.setSpacing(0)
+
+        self._btn_cm = QPushButton("cm")
+        self._btn_cm.setCheckable(True)
+        self._btn_cm.setChecked(True)
+        self._btn_cm.setFixedSize(50, 32)
+        self._btn_cm.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_cm.clicked.connect(lambda: self._on_toggle_unit(True))
+        seg_layout.addWidget(self._btn_cm)
+
+        self._btn_mm = QPushButton("mm")
+        self._btn_mm.setCheckable(True)
+        self._btn_mm.setChecked(False)
+        self._btn_mm.setFixedSize(50, 32)
+        self._btn_mm.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_mm.clicked.connect(lambda: self._on_toggle_unit(False))
+        seg_layout.addWidget(self._btn_mm)
+
+        _BSTYLE_CM_ACTIVE = (
+            f"background:{C_SUCCESS}; color:white; border:none;"
+            "border-top-left-radius:9px; border-bottom-left-radius:9px;"
+            "border-top-right-radius:0px; border-bottom-right-radius:0px;"
+            "font-size:14px; font-weight:600; padding:0px;"
+        )
+        _BSTYLE_CM_INACTIVE = (
+            "background:#E5E5EA; color:#8E8E93; border:none;"
+            "border-top-left-radius:9px; border-bottom-left-radius:9px;"
+            "border-top-right-radius:0px; border-bottom-right-radius:0px;"
+            "font-size:14px; font-weight:500; padding:0px;"
+        )
+        _BSTYLE_MM_ACTIVE = (
+            f"background:{C_SUCCESS}; color:white; border:none;"
+            "border-top-left-radius:0px; border-bottom-left-radius:0px;"
+            "border-top-right-radius:9px; border-bottom-right-radius:9px;"
+            "font-size:14px; font-weight:600; padding:0px;"
+        )
+        _BSTYLE_MM_INACTIVE = (
+            "background:#E5E5EA; color:#8E8E93; border:none;"
+            "border-top-left-radius:0px; border-bottom-left-radius:0px;"
+            "border-top-right-radius:9px; border-bottom-right-radius:9px;"
+            "font-size:14px; font-weight:500; padding:0px;"
+        )
+        self._btn_cm.setStyleSheet(f"QPushButton {{{_BSTYLE_CM_ACTIVE}}}")
+        self._btn_mm.setStyleSheet(f"QPushButton {{{_BSTYLE_MM_INACTIVE}}}")
+
+        top_bar.addLayout(seg_layout)
+        top_bar.addSpacing(6)
 
         self._lbl_config = QLabel("")
         self._lbl_config.setStyleSheet(
@@ -416,6 +469,66 @@ class HeightTestWidget(QWidget):
         inner.addStretch()
         grid.addWidget(frame, row, col)
 
+    # ==================== unit helpers ====================
+
+    def _unit_info(self) -> tuple:
+        """Return (scale, unit_str, std_good, std_ok, acc_threshold, fmt) for current unit."""
+        if self._unit_cm:
+            return 1.0, "cm", 0.1, 0.2, 0.2, ".1f"
+        else:
+            return 100, "mm", 10, 20, 20, ".0f"
+
+    def _on_toggle_unit(self, to_cm: bool) -> None:
+        if self._unit_cm == to_cm:
+            return
+        self._unit_cm = to_cm
+        self._btn_cm.setChecked(to_cm)
+        self._btn_mm.setChecked(not to_cm)
+
+        _ACT_CM = (
+            f"background:{C_SUCCESS}; color:white; border:none;"
+            "border-top-left-radius:9px; border-bottom-left-radius:9px;"
+            "border-top-right-radius:0px; border-bottom-right-radius:0px;"
+            "font-size:14px; font-weight:600; padding:0px;"
+        )
+        _INACT_CM = (
+            "background:#E5E5EA; color:#8E8E93; border:none;"
+            "border-top-left-radius:9px; border-bottom-left-radius:9px;"
+            "border-top-right-radius:0px; border-bottom-right-radius:0px;"
+            "font-size:14px; font-weight:500; padding:0px;"
+        )
+        _ACT_MM = (
+            f"background:{C_SUCCESS}; color:white; border:none;"
+            "border-top-left-radius:0px; border-bottom-left-radius:0px;"
+            "border-top-right-radius:9px; border-bottom-right-radius:9px;"
+            "font-size:14px; font-weight:600; padding:0px;"
+        )
+        _INACT_MM = (
+            "background:#E5E5EA; color:#8E8E93; border:none;"
+            "border-top-left-radius:0px; border-bottom-left-radius:0px;"
+            "border-top-right-radius:9px; border-bottom-right-radius:9px;"
+            "font-size:14px; font-weight:500; padding:0px;"
+        )
+        if to_cm:
+            self._btn_cm.setStyleSheet(f"QPushButton {{{_ACT_CM}}}")
+            self._btn_mm.setStyleSheet(f"QPushButton {{{_INACT_MM}}}")
+        else:
+            self._btn_cm.setStyleSheet(f"QPushButton {{{_INACT_CM}}}")
+            self._btn_mm.setStyleSheet(f"QPushButton {{{_ACT_MM}}}")
+
+        _, unit, _, _, _, _ = self._unit_info()
+        self._lbl_distance.setText(f"---- {unit}")
+        self._lbl_mean.setText(f"— {unit}")
+        self._lbl_std.setText(f"— {unit}")
+        self._lbl_min.setText(f"— {unit}")
+        self._lbl_max.setText(f"— {unit}")
+        self._lbl_range.setText(f"— {unit}")
+        self._lbl_dev.setText(f"— {unit}")
+        if self._last_raw_m > 0:
+            self._on_new_distance(self._last_raw_m)
+        if self._last_stats:
+            self._on_stats_update(self._last_stats)
+
     # ==================== state ====================
 
     def _update_ui_state(self) -> None:
@@ -517,7 +630,8 @@ class HeightTestWidget(QWidget):
         )
         self._lbl_config.setText("")
         self._lbl_grade.hide()
-        self._lbl_distance.setText("---- cm")
+        _, unit, _, _, _, _ = self._unit_info()
+        self._lbl_distance.setText(f"---- {unit}")
         self._lbl_dev_text.hide()
         self._update_ui_state()
 
@@ -570,17 +684,19 @@ class HeightTestWidget(QWidget):
             self._worker.clear()
         self._last_mean = 0.0
         self._last_stats = {}
-        self._lbl_distance.setText("---- cm")
+        self._last_raw_m = 0.0
+        _, unit, _, _, _, _ = self._unit_info()
+        self._lbl_distance.setText(f"---- {unit}")
         self._lbl_dev_text.hide()
         self._lbl_grade.hide()
-        self._lbl_mean.setText("— cm")
-        self._lbl_std.setText("— cm")
+        self._lbl_mean.setText(f"— {unit}")
+        self._lbl_std.setText(f"— {unit}")
         self._lbl_pct.setText("—")
-        self._lbl_min.setText("— cm")
-        self._lbl_max.setText("— cm")
-        self._lbl_range.setText("— cm")
+        self._lbl_min.setText(f"— {unit}")
+        self._lbl_max.setText(f"— {unit}")
+        self._lbl_range.setText(f"— {unit}")
         self._lbl_count.setText("0")
-        self._lbl_dev.setText("— cm")
+        self._lbl_dev.setText(f"— {unit}")
 
     def _on_snapshot(self) -> None:
         s = self._last_stats
@@ -589,24 +705,25 @@ class HeightTestWidget(QWidget):
 
         self._snap_count += 1
         n = self._snap_count
-        mean = s["mean"]
-        std = s["std"]
-        rng = s["max"] - s["min"]
+        scale, unit, _, _, acc_thresh, fmt = self._unit_info()
+        mean = s["mean"] * scale
+        std = s["std"] * scale
+        rng = (s["max"] - s["min"]) * scale
         pct = s["pct_2mm"]
 
-        raw_text = self._lbl_distance.text().replace(" cm", "").strip()
+        raw_text = self._lbl_distance.text().replace(f" {unit}", "").strip()
         try:
             raw_val = float(raw_text)
-            raw_str = f"{raw_val:.1f}"
+            raw_str = f"{raw_val:{fmt}}"
         except ValueError:
             raw_str = "—"
 
         line = (
-            f"#{n:2d}  |  当前={raw_str} cm  |  "
-            f"均值={mean:7.2f} cm  |  "
-            f"σ={std:.2f} cm  |  "
-            f"极差={rng:.2f} cm  |  "
-            f"±0.2cm={pct:.0f}%"
+            f"#{n:2d}  |  当前={raw_str} {unit}  |  "
+            f"均值={mean:7.2f} {unit}  |  "
+            f"σ={std:.2f} {unit}  |  "
+            f"极差={rng:.2f} {unit}  |  "
+            f"±{acc_thresh:.1f}{unit}={pct:.0f}%"
         )
         self._log_view.appendPlainText(line)
 
@@ -630,49 +747,54 @@ class HeightTestWidget(QWidget):
         if not path:
             return
 
+        _, unit, _, _, acc_thresh, _ = self._unit_info()
         with open(path, "w", encoding="utf-8") as f:
             f.write(f"# A121 精度测试记录\n")
             f.write(f"# 配置: Profile 1, step=1 (2.5mm), sq=30, 0.1-2.5m\n")
+            f.write(f"# 单位: {unit}\n")
             f.write(f"#\n")
-            f.write(f"#  序号  |  当前(cm)  |  均值(cm)  |  σ(cm)  |  极差(cm)  |  ±0.2cm命中率\n")
+            f.write(f"#  序号  |  当前({unit})  |  均值({unit})  |  σ({unit})  |  极差({unit})  |  ±{acc_thresh:.1f}{unit}命中率\n")
             f.write(f"{text}\n")
 
     def _on_new_distance(self, d_m: float) -> None:
-        d_cm = d_m * 100.0
-        self._lbl_distance.setText(f"{d_cm:.1f} cm")
+        self._last_raw_m = d_m
+        scale, unit, _, _, _, fmt = self._unit_info()
+        d_val = d_m * 100.0 * scale
+        self._lbl_distance.setText(f"{d_val:{fmt}} {unit}")
 
         if self._last_mean:
-            dev = d_cm - self._last_mean
-            self._lbl_dev_text.setText(f"偏离: {dev:+.2f} cm")
+            dev = (d_m * 100.0 - self._last_mean) * scale
+            self._lbl_dev_text.setText(f"偏离: {dev:{fmt}} {unit}")
             self._lbl_dev_text.setStyleSheet(
                 f"font-size: 14px; color: {C_WARN}; border: none;"
-                if abs(dev) > 0.1
+                if abs(dev) > 0.1 * scale
                 else f"font-size: 14px; color: {C_SUCCESS}; border: none;"
             )
             self._lbl_dev_text.show()
-            self._lbl_dev.setText(f"{dev:+.2f} cm")
+            self._lbl_dev.setText(f"{dev:{fmt}} {unit}")
 
     def _on_stats_update(self, stats: dict) -> None:
         self._last_stats = stats
         self._last_mean = stats["mean"]
+        scale, unit, good_std, ok_std, _, fmt = self._unit_info()
         self._lbl_count.setText(str(stats["n"]))
-        self._lbl_mean.setText(f"{stats['mean']:.2f} cm")
-        self._lbl_std.setText(f"{stats['std']:.2f} cm")
+        self._lbl_mean.setText(f"{stats['mean'] * scale:{fmt}} {unit}")
+        self._lbl_std.setText(f"{stats['std'] * scale:{fmt}} {unit}")
         self._lbl_pct.setText(f"{stats['pct_2mm']:.0f}%")
-        self._lbl_min.setText(f"{stats['min']:.2f} cm")
-        self._lbl_max.setText(f"{stats['max']:.2f} cm")
-        self._lbl_range.setText(f"{stats['max'] - stats['min']:.2f} cm")
+        self._lbl_min.setText(f"{stats['min'] * scale:{fmt}} {unit}")
+        self._lbl_max.setText(f"{stats['max'] * scale:{fmt}} {unit}")
+        self._lbl_range.setText(f"{(stats['max'] - stats['min']) * scale:{fmt}} {unit}")
 
         n = stats["n"]
         std = stats["std"]
         if n < 10:
             self._lbl_grade.hide()
         else:
-            if std < 0.1:
+            if std < good_std:
                 label = "优"
                 fg = C_SUCCESS
                 bg = "#E8F5E9"
-            elif std < 0.2:
+            elif std < ok_std:
                 label = "良"
                 fg = C_WARN
                 bg = "#FFF3E0"
@@ -680,7 +802,7 @@ class HeightTestWidget(QWidget):
                 label = "差"
                 fg = C_ERROR
                 bg = "#FFEBEE"
-            self._lbl_grade.setText(f"精度 {label}  ·  σ = {std:.2f} cm")
+            self._lbl_grade.setText(f"精度 {label}  ·  σ = {std * scale:{fmt}} {unit}")
             self._lbl_grade.setStyleSheet(
                 f"font-size: 13px; font-weight: 600; padding: 4px 10px;"
                 f"border-radius: 8px; border: none;"
