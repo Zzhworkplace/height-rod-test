@@ -48,6 +48,7 @@ REMOVE          = partial(qta.icon, "ei.remove-sign",            color=BUTTON_IC
 RESTORE         = partial(qta.icon, "mdi6.restore",              color=BUTTON_ICON_COLOR)
 SAVE            = partial(qta.icon, "mdi.content-save",          color=BUTTON_ICON_COLOR)
 RECORD          = partial(qta.icon, "mdi.record-circle-outline", color=BUTTON_ICON_COLOR)
+RULER           = partial(qta.icon, "fa5s.ruler",                color=BUTTON_ICON_COLOR)
 STOP            = partial(qta.icon, "fa5s.stop-circle",          color=BUTTON_ICON_COLOR)
 UNLINK          = partial(qta.icon, "fa5s.unlink",               color=BUTTON_ICON_COLOR)
 WARNING         = partial(qta.icon, "ph.warning-fill",           color=WARNING_YELLOW)

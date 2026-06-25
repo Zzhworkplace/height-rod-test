@@ -22,8 +22,9 @@ from PySide6.QtWidgets import (
 from acconeer.exptool.app.new.app_model import AppModel
 
 from .flash_tab import FlashWizard
+from .height_test_tab import HeightTestWidget
 from .help_tab import HelpMainWidget
-from .icons import FLASH, GAUGE, HELP, RECORD
+from .icons import FLASH, GAUGE, HELP, RECORD, RULER
 from .misc import ExceptionWidget
 from .resource_tab import ResourceMainWidget
 from .status_bar import StatusBar
@@ -82,6 +83,7 @@ class _PagedLayout(QSplitter):
 
     class _ButtonId(IntEnum):
         STREAM = auto()
+        DISTANCE_TEST = auto()
         FLASH = auto()
         RESOURCE_CALCULATOR = auto()
         HELP = auto()
@@ -115,6 +117,18 @@ class _PagedLayout(QSplitter):
         self._index_button_group.addButton(stream_index_button, id=self._ButtonId.STREAM)
         self._index_button_layout.addWidget(stream_index_button)
         self._page_widget.addWidget(self._stream_main_widget)
+
+        dist_test_button = _IconButton(
+            RULER(),
+            "DTest",
+            is_checkable=True,
+            is_active=False,
+            tooltip="Distance precision test",
+        )
+        self._height_test_widget = HeightTestWidget(self)
+        self._index_button_group.addButton(dist_test_button, id=self._ButtonId.DISTANCE_TEST)
+        self._index_button_layout.addWidget(dist_test_button)
+        self._page_widget.addWidget(self._height_test_widget)
 
         flash_index_button = _IconButton(
             FLASH(),
@@ -171,6 +185,8 @@ class _PagedLayout(QSplitter):
     def index_button_clicked(self, index_button_id: int) -> None:
         if index_button_id == self._ButtonId.STREAM:
             self.setCurrentWidget(self._stream_main_widget)
+        elif index_button_id == self._ButtonId.DISTANCE_TEST:
+            self.setCurrentWidget(self._height_test_widget)
         elif index_button_id == self._ButtonId.FLASH:
             FlashWizard(self.app_model).exec()
         elif index_button_id == self._ButtonId.RESOURCE_CALCULATOR:
@@ -185,6 +201,9 @@ class _PagedLayout(QSplitter):
         if widget is self._stream_main_widget:
             self._page_widget.setCurrentWidget(self._stream_main_widget)
             self._index_button_group.button(self._ButtonId.STREAM).setChecked(True)
+        elif widget is self._height_test_widget:
+            self._page_widget.setCurrentWidget(self._height_test_widget)
+            self._index_button_group.button(self._ButtonId.DISTANCE_TEST).setChecked(True)
         elif widget is self._resource_main_widget:
             self._page_widget.setCurrentWidget(self._resource_main_widget)
             self._index_button_group.button(self._ButtonId.RESOURCE_CALCULATOR).setChecked(True)
