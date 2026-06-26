@@ -476,7 +476,7 @@ class HeightTestWidget(QWidget):
         if self._unit_cm:
             return 1.0, "cm", 0.1, 0.2, 0.2, ".1f"
         else:
-            return 100, "mm", 10, 20, 20, ".0f"
+            return 10, "mm", 0.1, 0.2, 2, ".0f"
 
     def _on_toggle_unit(self, to_cm: bool) -> None:
         if self._unit_cm == to_cm:
