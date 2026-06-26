@@ -190,57 +190,6 @@ class HeightTestWidget(QWidget):
         top_bar.addWidget(self._lbl_status)
         top_bar.addStretch()
 
-        # --- Segmented unit switch (cm | mm) ---
-        seg_layout = QHBoxLayout()
-        seg_layout.setContentsMargins(0, 0, 0, 0)
-        seg_layout.setSpacing(0)
-
-        self._btn_cm = QPushButton("cm")
-        self._btn_cm.setCheckable(True)
-        self._btn_cm.setChecked(True)
-        self._btn_cm.setFixedSize(50, 32)
-        self._btn_cm.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_cm.clicked.connect(lambda: self._on_toggle_unit(True))
-        seg_layout.addWidget(self._btn_cm)
-
-        self._btn_mm = QPushButton("mm")
-        self._btn_mm.setCheckable(True)
-        self._btn_mm.setChecked(False)
-        self._btn_mm.setFixedSize(50, 32)
-        self._btn_mm.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_mm.clicked.connect(lambda: self._on_toggle_unit(False))
-        seg_layout.addWidget(self._btn_mm)
-
-        _BSTYLE_CM_ACTIVE = (
-            f"background:{C_SUCCESS}; color:white; border:none;"
-            "border-top-left-radius:9px; border-bottom-left-radius:9px;"
-            "border-top-right-radius:0px; border-bottom-right-radius:0px;"
-            "font-size:14px; font-weight:600; padding:0px;"
-        )
-        _BSTYLE_CM_INACTIVE = (
-            "background:#E5E5EA; color:#8E8E93; border:none;"
-            "border-top-left-radius:9px; border-bottom-left-radius:9px;"
-            "border-top-right-radius:0px; border-bottom-right-radius:0px;"
-            "font-size:14px; font-weight:500; padding:0px;"
-        )
-        _BSTYLE_MM_ACTIVE = (
-            f"background:{C_SUCCESS}; color:white; border:none;"
-            "border-top-left-radius:0px; border-bottom-left-radius:0px;"
-            "border-top-right-radius:9px; border-bottom-right-radius:9px;"
-            "font-size:14px; font-weight:600; padding:0px;"
-        )
-        _BSTYLE_MM_INACTIVE = (
-            "background:#E5E5EA; color:#8E8E93; border:none;"
-            "border-top-left-radius:0px; border-bottom-left-radius:0px;"
-            "border-top-right-radius:9px; border-bottom-right-radius:9px;"
-            "font-size:14px; font-weight:500; padding:0px;"
-        )
-        self._btn_cm.setStyleSheet(f"QPushButton {{{_BSTYLE_CM_ACTIVE}}}")
-        self._btn_mm.setStyleSheet(f"QPushButton {{{_BSTYLE_MM_INACTIVE}}}")
-
-        top_bar.addLayout(seg_layout)
-        top_bar.addSpacing(6)
-
         self._lbl_config = QLabel("")
         self._lbl_config.setStyleSheet(
             f"color: {C_TEXT_SECONDARY}; font-size: 12px; border: none;"
@@ -249,32 +198,39 @@ class HeightTestWidget(QWidget):
         top_bar.addWidget(self._lbl_config)
         layout.addLayout(top_bar)
 
-        # --- Distance display ---
-        dist_group = QGroupBox()
-        dist_group.setStyleSheet(
-            "QGroupBox {"
-            f"  border: none; border-radius: 12px;"
-            f"  background: {C_BG_CARD}; padding: 12px;"
-            "}"
-        )
-        dist_layout = QVBoxLayout(dist_group)
-        dist_layout.setContentsMargins(0, 0, 0, 0)
-        dist_layout.setSpacing(0)
+        # ===== Main content: left (1/2) + right (1/2) block layout =====
+        main_layout = QHBoxLayout()
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(12)
+
+        # ==================== LEFT COLUMN: Distance + Stats (1/2) ====================
+        left_col = QVBoxLayout()
+        left_col.setSpacing(10)
+
+        # -- Distance card (top-left, 1/4 of total) --
+        dist_card = QGroupBox()
+        dist_card.setMinimumWidth(300)
+        dist_card.setStyleSheet(self._CARD_CSS)
+        dist_inner = QVBoxLayout(dist_card)
+        dist_inner.setContentsMargins(12, 16, 12, 8)
+        dist_inner.setSpacing(4)
 
         self._lbl_distance = QLabel("---- cm")
         self._lbl_distance.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._lbl_distance.setStyleSheet(
             f"font-size: 52px; font-weight: 500; color: {C_TEXT_PRIMARY};"
             "border: none; background: transparent;"
-            "padding: 16px 16px 0px 16px; letter-spacing: -0.02em;"
+            "letter-spacing: -0.02em;"
         )
         self._lbl_distance.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
-        dist_layout.addWidget(self._lbl_distance)
+        dist_inner.addWidget(self._lbl_distance)
 
+        # Bottom row: grade + deviation + unit switch
         info_row = QHBoxLayout()
-        info_row.setContentsMargins(16, 4, 16, 10)
+        info_row.setContentsMargins(0, 0, 0, 0)
+        info_row.setSpacing(8)
 
         self._lbl_grade = QLabel("")
         self._lbl_grade.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -283,7 +239,7 @@ class HeightTestWidget(QWidget):
             "border-radius: 8px; border: none; letter-spacing: -0.01em;"
         )
         self._lbl_grade.hide()
-        info_row.addWidget(self._lbl_grade, stretch=1)
+        info_row.addWidget(self._lbl_grade)
 
         self._lbl_dev_text = QLabel("")
         self._lbl_dev_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -291,17 +247,68 @@ class HeightTestWidget(QWidget):
             f"font-size: 13px; color: {C_TEXT_SECONDARY}; border: none; font-weight: 500;"
         )
         info_row.addWidget(self._lbl_dev_text)
-        dist_layout.addLayout(info_row)
-        layout.addWidget(dist_group, stretch=1)
+        info_row.addStretch()
 
-        # --- Stats cards ---
-        stats_group = QGroupBox("实时统计")
-        stats_group.setStyleSheet(self._CARD_CSS)
-        stats_outer = QVBoxLayout(stats_group)
-        stats_outer.setSpacing(4)
+        # Unit switch (cm | mm) bottom-right
+        seg_layout = QHBoxLayout()
+        seg_layout.setContentsMargins(0, 0, 0, 0)
+        seg_layout.setSpacing(0)
 
-        stats_grid = QGridLayout()
+        self._btn_cm = QPushButton("cm")
+        self._btn_cm.setCheckable(True)
+        self._btn_cm.setChecked(True)
+        self._btn_cm.setFixedSize(50, 28)
+        self._btn_cm.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_cm.clicked.connect(lambda: self._on_toggle_unit(True))
+        seg_layout.addWidget(self._btn_cm)
+
+        self._btn_mm = QPushButton("mm")
+        self._btn_mm.setCheckable(True)
+        self._btn_mm.setChecked(False)
+        self._btn_mm.setFixedSize(50, 28)
+        self._btn_mm.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_mm.clicked.connect(lambda: self._on_toggle_unit(False))
+        seg_layout.addWidget(self._btn_mm)
+
+        _BSTYLE_CM_ACTIVE = (
+            f"background:{C_SUCCESS}; color:white; border:none;"
+            "border-top-left-radius:8px; border-bottom-left-radius:8px;"
+            "border-top-right-radius:0px; border-bottom-right-radius:0px;"
+            "font-size:13px; font-weight:600; padding:0px;"
+        )
+        _BSTYLE_CM_INACTIVE = (
+            "background:#E5E5EA; color:#8E8E93; border:none;"
+            "border-top-left-radius:8px; border-bottom-left-radius:8px;"
+            "border-top-right-radius:0px; border-bottom-right-radius:0px;"
+            "font-size:13px; font-weight:500; padding:0px;"
+        )
+        _BSTYLE_MM_ACTIVE = (
+            f"background:{C_SUCCESS}; color:white; border:none;"
+            "border-top-left-radius:0px; border-bottom-left-radius:0px;"
+            "border-top-right-radius:8px; border-bottom-right-radius:8px;"
+            "font-size:13px; font-weight:600; padding:0px;"
+        )
+        _BSTYLE_MM_INACTIVE = (
+            "background:#E5E5EA; color:#8E8E93; border:none;"
+            "border-top-left-radius:0px; border-bottom-left-radius:0px;"
+            "border-top-right-radius:8px; border-bottom-right-radius:8px;"
+            "font-size:13px; font-weight:500; padding:0px;"
+        )
+        self._btn_cm.setStyleSheet(f"QPushButton {{{_BSTYLE_CM_ACTIVE}}}")
+        self._btn_mm.setStyleSheet(f"QPushButton {{{_BSTYLE_MM_INACTIVE}}}")
+
+        info_row.addLayout(seg_layout)
+        dist_inner.addLayout(info_row)
+
+        left_col.addWidget(dist_card, stretch=1)
+
+        # -- Stats card (bottom-left, 1/4 of total) --
+        stats_card = QGroupBox("实时统计")
+        stats_card.setMinimumWidth(300)
+        stats_card.setStyleSheet(self._CARD_CSS)
+        stats_grid = QGridLayout(stats_card)
         stats_grid.setSpacing(4)
+        stats_grid.setVerticalSpacing(2)
 
         self._lbl_mean = QLabel("—")
         self._lbl_std = QLabel("—")
@@ -314,97 +321,94 @@ class HeightTestWidget(QWidget):
 
         self._make_stat_card(stats_grid, 0, 0, "均值", self._lbl_mean, "cm")
         self._make_stat_card(stats_grid, 0, 1, "σ 稳定度", self._lbl_std, "cm")
-        self._make_stat_card(stats_grid, 0, 2, "±0.2cm 命中率", self._lbl_pct, "%")
-        self._make_stat_card(stats_grid, 0, 3, "极差 (含偶发跳变)", self._lbl_range, "cm")
-        self._make_stat_card(stats_grid, 1, 0, "最小 (最偏近)", self._lbl_min, "cm")
-        self._make_stat_card(stats_grid, 1, 1, "最大 (最偏远)", self._lbl_max, "cm")
-        self._make_stat_card(stats_grid, 1, 2, f"采样数 ({WINDOW_SIZE})", self._lbl_count, "")
-        self._make_stat_card(stats_grid, 1, 3, "当前偏差", self._lbl_dev, "cm")
+        self._make_stat_card(stats_grid, 1, 0, "±0.2cm 命中率", self._lbl_pct, "%")
+        self._make_stat_card(stats_grid, 1, 1, "极差", self._lbl_range, "cm")
+        self._make_stat_card(stats_grid, 2, 0, "最小", self._lbl_min, "cm")
+        self._make_stat_card(stats_grid, 2, 1, "最大", self._lbl_max, "cm")
+        self._make_stat_card(stats_grid, 3, 0, f"采样数 ({WINDOW_SIZE})", self._lbl_count, "")
+        self._make_stat_card(stats_grid, 3, 1, "当前偏差", self._lbl_dev, "cm")
 
-        for c in range(4):
-            stats_grid.setColumnStretch(c, 1)
-        stats_outer.addLayout(stats_grid)
-        layout.addWidget(stats_group)
+        left_col.addWidget(stats_card, stretch=1)
 
-        # --- Log area: text left, buttons stacked right ---
-        log_card = QGroupBox()
-        log_card.setStyleSheet(self._CARD_CSS)
-        log_layout = QVBoxLayout(log_card)
-        log_layout.setSpacing(4)
+        main_layout.addLayout(left_col, stretch=1)
+
+        # ==================== RIGHT COLUMN: Records (1/2) ====================
+        records_card = QGroupBox()
+        records_card.setStyleSheet(self._CARD_CSS)
+        records_inner = QVBoxLayout(records_card)
+        records_inner.setContentsMargins(0, 0, 0, 0)
+        records_inner.setSpacing(6)
 
         log_label = QLabel("多点精度记录")
         log_label.setStyleSheet(
             f"font-size: 13px; font-weight: 600; color: {C_TEXT_PRIMARY}; border: none;"
         )
-        log_layout.addWidget(log_label)
-
-        log_body = QHBoxLayout()
-        log_body.setSpacing(8)
+        records_inner.addWidget(log_label)
 
         self._log_view = QPlainTextEdit()
         self._log_view.setReadOnly(True)
         self._log_view.setMaximumBlockCount(500)
         self._log_view.setStyleSheet(
             "QPlainTextEdit {"
-            f"  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; font-size: 13px;"
+            "  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; font-size: 13px;"
             f"  color: {C_TEXT_PRIMARY}; background: rgba(0,0,0,0.02);"
             f"  border: none; border-radius: 8px;"
             "  padding: 10px;"
             "}"
         )
         self._log_view.setPlaceholderText("对准目标 → 稳定后点「记录」")
-        log_body.addWidget(self._log_view, stretch=1)
+        records_inner.addWidget(self._log_view, stretch=1)
 
-        btn_col = QVBoxLayout()
-        btn_col.setSpacing(4)
+        # Button row at bottom
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
 
         self._btn_snap = QPushButton("记录当前")
         self._btn_snap.setStyleSheet(
             "QPushButton {"
             f"  background: {C_SUCCESS}; color: white; border: none; border-radius: 8px;"
-            "  padding: 7px 12px; font-size: 12px; font-weight: 600;"
+            "  padding: 8px 16px; font-size: 12px; font-weight: 600;"
             "  letter-spacing: -0.01em;"
             "}"
             "QPushButton:hover  { background: #2DB84D; }"
             "QPushButton:disabled { background: rgba(0,0,0,0.15); color: rgba(0,0,0,0.3); }"
         )
         self._btn_snap.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_snap.setFixedWidth(100)
         self._btn_snap.clicked.connect(self._on_snapshot)
-        btn_col.addWidget(self._btn_snap)
+        btn_row.addWidget(self._btn_snap)
 
         self._btn_clear_log = QPushButton("清空记录")
         self._btn_clear_log.setStyleSheet(
             "QPushButton {"
             f"  background: rgba(0,0,0,0.04); color: {C_TEXT_SECONDARY};"
             "  border: none; border-radius: 8px;"
-            "  padding: 7px 12px; font-size: 12px; font-weight: 500;"
+            "  padding: 8px 16px; font-size: 12px; font-weight: 500;"
             "}"
             f"QPushButton:hover {{ color: {C_ERROR}; background: rgba(255,59,48,0.08); }}"
         )
         self._btn_clear_log.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_clear_log.setFixedWidth(100)
         self._btn_clear_log.clicked.connect(self._on_clear_log)
-        btn_col.addWidget(self._btn_clear_log)
+        btn_row.addWidget(self._btn_clear_log)
 
         self._btn_export = QPushButton("导出数据")
         self._btn_export.setStyleSheet(
             "QPushButton {"
             f"  background: rgba(0,122,255,0.08); color: {C_PRIMARY};"
             "  border: none; border-radius: 8px;"
-            "  padding: 7px 12px; font-size: 12px; font-weight: 600;"
+            "  padding: 8px 16px; font-size: 12px; font-weight: 600;"
             "}"
             "QPushButton:hover  { background: rgba(0,122,255,0.15); }"
         )
         self._btn_export.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_export.setFixedWidth(100)
         self._btn_export.clicked.connect(self._on_export)
-        btn_col.addWidget(self._btn_export)
+        btn_row.addWidget(self._btn_export)
 
-        btn_col.addStretch()
-        log_body.addLayout(btn_col)
-        log_layout.addLayout(log_body)
-        layout.addWidget(log_card, stretch=4)
+        btn_row.addStretch()
+        records_inner.addLayout(btn_row)
+
+        main_layout.addWidget(records_card, stretch=1)
+
+        layout.addLayout(main_layout, stretch=1)
 
         # --- Control bar ---
         ctrl_group = QGroupBox()
@@ -443,16 +447,17 @@ class HeightTestWidget(QWidget):
         value_label: QLabel,
         unit: str,
     ) -> None:
-        frame = QGroupBox()
-        frame.setStyleSheet(
-            "QGroupBox {"
-            f"  border: none; border-radius: 8px;"
-            f"  background: rgba(0,0,0,0.03); padding: 2px;"
+        wrapper = QWidget()
+        wrapper.setMinimumWidth(140)
+        wrapper.setStyleSheet(
+            "QWidget {"
+            "  border: 1px solid rgba(0,0,0,0.06); border-radius: 6px;"
+            "  background: transparent;"
             "}"
         )
-        inner = QHBoxLayout(frame)
-        inner.setContentsMargins(8, 5, 8, 5)
-        inner.setSpacing(6)
+        inner = QHBoxLayout(wrapper)
+        inner.setContentsMargins(8, 4, 8, 4)
+        inner.setSpacing(4)
 
         title = QLabel(f"{label}:")
         title.setStyleSheet(
@@ -462,12 +467,13 @@ class HeightTestWidget(QWidget):
 
         val_text = f"— {unit}" if unit else "—"
         value_label.setText(val_text)
+        value_label.setMinimumWidth(60)
         value_label.setStyleSheet(
             f"font-size: 14px; font-weight: 600; color: {C_TEXT_PRIMARY}; border: none;"
         )
         inner.addWidget(value_label)
         inner.addStretch()
-        grid.addWidget(frame, row, col)
+        grid.addWidget(wrapper, row, col)
 
     # ==================== unit helpers ====================
 
@@ -487,27 +493,27 @@ class HeightTestWidget(QWidget):
 
         _ACT_CM = (
             f"background:{C_SUCCESS}; color:white; border:none;"
-            "border-top-left-radius:9px; border-bottom-left-radius:9px;"
+            "border-top-left-radius:8px; border-bottom-left-radius:8px;"
             "border-top-right-radius:0px; border-bottom-right-radius:0px;"
-            "font-size:14px; font-weight:600; padding:0px;"
+            "font-size:13px; font-weight:600; padding:0px;"
         )
         _INACT_CM = (
             "background:#E5E5EA; color:#8E8E93; border:none;"
-            "border-top-left-radius:9px; border-bottom-left-radius:9px;"
+            "border-top-left-radius:8px; border-bottom-left-radius:8px;"
             "border-top-right-radius:0px; border-bottom-right-radius:0px;"
-            "font-size:14px; font-weight:500; padding:0px;"
+            "font-size:13px; font-weight:500; padding:0px;"
         )
         _ACT_MM = (
             f"background:{C_SUCCESS}; color:white; border:none;"
             "border-top-left-radius:0px; border-bottom-left-radius:0px;"
-            "border-top-right-radius:9px; border-bottom-right-radius:9px;"
-            "font-size:14px; font-weight:600; padding:0px;"
+            "border-top-right-radius:8px; border-bottom-right-radius:8px;"
+            "font-size:13px; font-weight:600; padding:0px;"
         )
         _INACT_MM = (
             "background:#E5E5EA; color:#8E8E93; border:none;"
             "border-top-left-radius:0px; border-bottom-left-radius:0px;"
-            "border-top-right-radius:9px; border-bottom-right-radius:9px;"
-            "font-size:14px; font-weight:500; padding:0px;"
+            "border-top-right-radius:8px; border-bottom-right-radius:8px;"
+            "font-size:13px; font-weight:500; padding:0px;"
         )
         if to_cm:
             self._btn_cm.setStyleSheet(f"QPushButton {{{_ACT_CM}}}")
@@ -598,7 +604,7 @@ class HeightTestWidget(QWidget):
             self._lbl_status.setStyleSheet(
                 f"color: {C_SUCCESS}; font-weight: 500; font-size: 14px; border: none;"
             )
-            self._lbl_config.setText("Profile 1 │ 采样间距 2.5mm │ 信号质量 30 │ 范围 10–250cm")
+            self._lbl_config.setText("Profile 1 | 采样间距 2.5mm | 信号质量 30 | 范围 10-250cm")
         except Exception as e:
             self._lbl_status.setText(f"连接失败: {e}")
             self._lbl_status.setStyleSheet(
@@ -648,7 +654,7 @@ class HeightTestWidget(QWidget):
             return
 
         self._measuring = True
-        self._lbl_status.setText("测量中 …")
+        self._lbl_status.setText("测量中 ...")
         self._lbl_status.setStyleSheet(
             f"color: {C_PRIMARY}; font-weight: 500; font-size: 14px; border: none;"
         )
