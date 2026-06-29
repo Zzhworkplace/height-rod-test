@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPlainTextEdit,
     QPushButton,
     QSizePolicy,
@@ -110,6 +111,7 @@ class HeightTestWidget(QWidget):
         self._snap_count = 0
         self._unit_cm = True  # True=cm, False=mm
         self._last_raw_m: float = 0.0  # cached raw distance in meters for unit switch
+        self._snapshots: list[dict] = []  # structured records for export
 
         self._build_ui()
         self._update_ui_state()
@@ -345,6 +347,44 @@ class HeightTestWidget(QWidget):
         )
         records_inner.addWidget(log_label)
 
+        # Laser reference input row
+        laser_row = QHBoxLayout()
+        laser_row.setContentsMargins(0, 0, 0, 0)
+        laser_row.setSpacing(6)
+
+        self._lbl_laser = QLabel("激光参考值:")
+        self._lbl_laser.setStyleSheet(
+            f"font-size: 12px; color: {C_TEXT_SECONDARY}; border: none; font-weight: 500;"
+        )
+        laser_row.addWidget(self._lbl_laser)
+
+        self._laser_input = QLineEdit()
+        self._laser_input.setPlaceholderText("输入激光记录仪测量值")
+        self._laser_input.setFixedHeight(28)
+        self._laser_input.setStyleSheet(
+            "QLineEdit {"
+            "  font-size: 13px; color: #1C1C1E;"
+            "  border: 1px solid #C6C6C8; border-radius: 6px;"
+            "  padding: 2px 8px; background: white;"
+            "}"
+            "QLineEdit:focus { border-color: #007AFF; }"
+        )
+        laser_row.addWidget(self._laser_input, stretch=1)
+
+        self._lbl_laser_unit = QLabel("cm")
+        self._lbl_laser_unit.setStyleSheet(
+            f"font-size: 12px; color: {C_TEXT_SECONDARY}; border: none; font-weight: 500;"
+        )
+        laser_row.addWidget(self._lbl_laser_unit)
+
+        self._lbl_laser_hint = QLabel("输完后点「记录当前」")
+        self._lbl_laser_hint.setStyleSheet(
+            f"font-size: 11px; color: {C_TEXT_MUTED}; border: none;"
+        )
+        laser_row.addWidget(self._lbl_laser_hint)
+
+        records_inner.addLayout(laser_row)
+
         self._log_view = QPlainTextEdit()
         self._log_view.setReadOnly(True)
         self._log_view.setMaximumBlockCount(500)
@@ -487,7 +527,23 @@ class HeightTestWidget(QWidget):
     def _on_toggle_unit(self, to_cm: bool) -> None:
         if self._unit_cm == to_cm:
             return
+
+        # Convert laser input value along with unit switch
+        old_scale, _, _, _, _, _ = self._unit_info()
         self._unit_cm = to_cm
+        new_scale, new_unit, _, _, _, _ = self._unit_info()
+
+        laser_text = self._laser_input.text().strip()
+        if laser_text:
+            try:
+                laser_val = float(laser_text)
+                converted = laser_val * (new_scale / old_scale) if old_scale != 0 else laser_val
+                self._laser_input.setText(f"{converted:.1f}")
+            except ValueError:
+                pass
+
+        self._lbl_laser_unit.setText(new_unit)
+
         self._btn_cm.setChecked(to_cm)
         self._btn_mm.setChecked(not to_cm)
 
@@ -722,16 +778,71 @@ class HeightTestWidget(QWidget):
             raw_val = float(raw_text)
             raw_str = f"{raw_val:{fmt}}"
         except ValueError:
+            raw_val = 0.0
             raw_str = "—"
 
+        # Read laser reference value
+        laser_str = self._laser_input.text().strip()
+        laser_val: t.Optional[float] = None
+        laser_display = "—"
+        if laser_str:
+            try:
+                laser_val = float(laser_str)
+                laser_display = f"{laser_val:{fmt}}"
+            except ValueError:
+                laser_val = None
+
+        # Calculate differences (sensor - laser)
+        diff_raw_val: t.Optional[float] = None   # instant - laser
+        diff_mean_val: t.Optional[float] = None  # mean - laser
+        diff_raw_pct_val: t.Optional[float] = None
+        diff_mean_pct_val: t.Optional[float] = None
+
+        if laser_val is not None:
+            diff_mean_val = mean - laser_val
+            if raw_val is not None and raw_val != 0.0:
+                diff_raw_val = raw_val - laser_val
+            if abs(laser_val) > 0.001:
+                diff_mean_pct_val = diff_mean_val / laser_val * 100.0
+                if diff_raw_val is not None:
+                    diff_raw_pct_val = diff_raw_val / laser_val * 100.0
+
+        # Build log line
         line = (
-            f"#{n:2d}  |  当前={raw_str} {unit}  |  "
+            f"#{n:2d}  |  传感器={raw_str} {unit}  |  "
             f"均值={mean:7.2f} {unit}  |  "
-            f"σ={std:.2f} {unit}  |  "
+            f"标准差σ={std:.2f} {unit}  |  "
             f"极差={rng:.2f} {unit}  |  "
             f"±{acc_thresh:.1f}{unit}={pct:.0f}%"
         )
+        if laser_val is not None:
+            d_raw = f"{diff_raw_val:{fmt}}" if diff_raw_val is not None else "—"
+            d_mean = f"{diff_mean_val:{fmt}}"
+            p_raw = f"{diff_raw_pct_val:.2f}%" if diff_raw_pct_val is not None else "—"
+            p_mean = f"{diff_mean_pct_val:.2f}%"
+            line += (
+                f"\n      激光参考={laser_display} {unit}  |  "
+                f"瞬时差值={d_raw} {unit}({p_raw})  |  "
+                f"均值差值={d_mean} {unit}({p_mean})"
+            )
         self._log_view.appendPlainText(line)
+
+        # Store structured record for export
+        self._snapshots.append({
+            "index": n,
+            "sensor_raw": raw_val,
+            "sensor_mean": mean,
+            "sensor_std": std,
+            "sensor_range": rng,
+            "hit_rate": pct,
+            "laser": laser_val,
+            "diff_raw": diff_raw_val,
+            "diff_raw_pct": diff_raw_pct_val,
+            "diff_mean": diff_mean_val,
+            "diff_mean_pct": diff_mean_pct_val,
+            "unit": unit,
+            "samples": s["n"],
+        })
 
         scrollbar = self._log_view.verticalScrollBar()
         if scrollbar is not None:
@@ -739,27 +850,111 @@ class HeightTestWidget(QWidget):
 
     def _on_clear_log(self) -> None:
         self._log_view.clear()
+        self._snapshots.clear()
         self._snap_count = 0
 
     def _on_export(self) -> None:
-        text = self._log_view.toPlainText()
-        if not text.strip():
-            return
+        if not self._snapshots:
+            text = self._log_view.toPlainText()
+            if not text.strip():
+                return
+        else:
+            text = self._log_view.toPlainText()
 
-        path, _ = QFileDialog.getSaveFileName(
-            self, "导出精度记录", "precision_log.txt",
-            "文本文件 (*.txt);;CSV (*.csv);;所有文件 (*)"
+        path, selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "导出精度记录",
+            "precision_log.csv",
+            "CSV (*.csv);;文本文件 (*.txt);;所有文件 (*)",
+            options=QFileDialog.Option.DontUseNativeDialog,
         )
         if not path:
             return
 
-        _, unit, _, _, acc_thresh, _ = self._unit_info()
-        with open(path, "w", encoding="utf-8") as f:
+        _, unit, _, _, acc_thresh, fmt = self._unit_info()
+        is_csv = path.lower().endswith(".csv") or "CSV" in selected_filter
+
+        if is_csv:
+            self._export_csv(path, unit, acc_thresh, fmt)
+        else:
+            self._export_txt(path, unit, acc_thresh, text)
+
+    def _export_csv(self, path: str, unit: str, acc_thresh: float, fmt: str) -> None:
+        """Export structured CSV with laser comparison columns."""
+        has_laser = any(s["laser"] is not None for s in self._snapshots)
+
+        with open(path, "w", encoding="utf-8-sig", newline="") as f:
+            import csv
+            writer = csv.writer(f)
+
+            # Metadata header
+            writer.writerow(["# A121 精度测试记录 — 传感器 vs 激光记录仪对比"])
+            writer.writerow(["# 配置: Profile 1, step=1 (2.5mm), sq=30, 0.1-2.5m"])
+            writer.writerow([f"# 单位: {unit}"])
+            writer.writerow([f"# 总计 {len(self._snapshots)} 个记录点"])
+            writer.writerow([])
+
+            # Column headers: 序号, 瞬时, 均值, 激光, 瞬时差值, 瞬时偏差率, 均值差值, 均值偏差率, σ, 极差, 命中率, 采样数
+            header = [
+                "序号",
+                f"传感器瞬时({unit})",
+                f"均值({unit})",
+            ]
+            if has_laser:
+                header.extend([
+                    f"激光参考({unit})",
+                    f"瞬时差值({unit})",
+                    "瞬时偏差率(%)",
+                    f"均值差值({unit})",
+                    "均值偏差率(%)",
+                ])
+            header.extend([
+                f"标准差σ({unit})",
+                f"极差({unit})",
+                f"±{acc_thresh:.1f}{unit}命中率(%)",
+                f"采样数",
+            ])
+
+            # Extra empty columns for user manual fill-in
+            header.extend(["备注", "测试点位置"])
+
+            writer.writerow(header)
+
+            # Data rows
+            for s in self._snapshots:
+                row = [
+                    s["index"],
+                    f"{s['sensor_raw']:{fmt}}",
+                    f"{s['sensor_mean']:.2f}",
+                ]
+                if has_laser:
+                    if s["laser"] is not None:
+                        row.extend([
+                            f"{s['laser']:{fmt}}",
+                            f"{s['diff_raw']:{fmt}}" if s["diff_raw"] is not None else "",
+                            f"{s['diff_raw_pct']:.2f}" if s["diff_raw_pct"] is not None else "",
+                            f"{s['diff_mean']:{fmt}}" if s["diff_mean"] is not None else "",
+                            f"{s['diff_mean_pct']:.2f}" if s["diff_mean_pct"] is not None else "",
+                        ])
+                    else:
+                        row.extend(["", "", "", "", ""])
+                row.extend([
+                    f"{s['sensor_std']:.2f}",
+                    f"{s['sensor_range']:.2f}",
+                    f"{s['hit_rate']:.0f}",
+                    s["samples"],
+                ])
+                row.extend(["", ""])
+                writer.writerow(row)
+
+    def _export_txt(self, path: str, unit: str, acc_thresh: float, text: str) -> None:
+        """Legacy plain-text export."""
+        with open(path, "w", encoding="utf-8-sig") as f:
             f.write(f"# A121 精度测试记录\n")
             f.write(f"# 配置: Profile 1, step=1 (2.5mm), sq=30, 0.1-2.5m\n")
             f.write(f"# 单位: {unit}\n")
             f.write(f"#\n")
-            f.write(f"#  序号  |  当前({unit})  |  均值({unit})  |  σ({unit})  |  极差({unit})  |  ±{acc_thresh:.1f}{unit}命中率\n")
+            f.write(f"#  序号  |  传感器({unit})  |  均值({unit})  |  标准差σ({unit})  |  极差({unit})  |  ±{acc_thresh:.1f}{unit}命中率\n")
             f.write(f"{text}\n")
 
     def _on_new_distance(self, d_m: float) -> None:
