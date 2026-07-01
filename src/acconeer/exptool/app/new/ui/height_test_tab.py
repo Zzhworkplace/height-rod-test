@@ -9,8 +9,11 @@ import typing as t
 
 import numpy as np
 
+from acconeer.exptool import a121
+
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
+    QComboBox,
     QFileDialog,
     QGroupBox,
     QGridLayout,
@@ -20,6 +23,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSizePolicy,
+    QSlider,
     QVBoxLayout,
     QWidget,
 )
@@ -45,6 +49,8 @@ class _MeasurementWorker(QThread):
 
     sig_distance = Signal(float)
     sig_stats = Signal(dict)
+    sig_temperature = Signal(int)
+    sig_frame_rate = Signal(float)
     sig_error = Signal(str)
     sig_finished = Signal()
 
@@ -53,13 +59,28 @@ class _MeasurementWorker(QThread):
         self.detector = detector
         self._running = False
         self._window: collections.deque[float] = collections.deque(maxlen=WINDOW_SIZE)
+        self._rate_samples: collections.deque[float] = collections.deque(maxlen=20)
 
     def run(self) -> None:
         self._running = True
+        from time import perf_counter
+        last_ts = perf_counter()
         try:
             while self._running:
                 result = self.detector.get_next()
                 sensor_result = result[1]
+                t_now = perf_counter()
+                dt = t_now - last_ts
+                last_ts = t_now
+                if dt > 0:
+                    self._rate_samples.append(1.0 / dt)
+                    if len(self._rate_samples) >= 5:
+                        avg_rate = sum(self._rate_samples) / len(self._rate_samples)
+                        self.sig_frame_rate.emit(avg_rate)
+
+                if sensor_result.temperature is not None:
+                    self.sig_temperature.emit(sensor_result.temperature)
+
                 if sensor_result.distances is not None and len(sensor_result.distances) > 0:
                     d = sensor_result.distances[0]
                     self._window.append(d)
@@ -75,6 +96,7 @@ class _MeasurementWorker(QThread):
 
     def clear(self) -> None:
         self._window.clear()
+        self._rate_samples.clear()
 
     def _compute_stats(self) -> dict:
         arr = np.array(list(self._window)) * 100.0
@@ -112,6 +134,11 @@ class HeightTestWidget(QWidget):
         self._unit_cm = True  # True=cm, False=mm
         self._last_raw_m: float = 0.0  # cached raw distance in meters for unit switch
         self._snapshots: list[dict] = []  # structured records for export
+        self._config_profile = a121.Profile.PROFILE_1
+        self._config_sq = 30.0
+        self._config_step = 1
+        self._config_start_m = 0.1
+        self._config_end_m = 2.5
 
         self._build_ui()
         self._update_ui_state()
@@ -198,7 +225,117 @@ class HeightTestWidget(QWidget):
             "background: #ECEFF1; border-radius: 4px; padding: 2px 8px;"
         )
         top_bar.addWidget(self._lbl_config)
+
+        # Frame rate & temperature in status bar
+        self._lbl_frame_rate = QLabel("帧率: — Hz")
+        self._lbl_frame_rate.setStyleSheet(
+            f"font-size: 11px; color: {C_TEXT_SECONDARY}; border: none;"
+        )
+        top_bar.addWidget(self._lbl_frame_rate)
+
+        self._lbl_temperature = QLabel("温度: — ℃")
+        self._lbl_temperature.setStyleSheet(
+            f"font-size: 11px; color: {C_TEXT_SECONDARY}; border: none;"
+        )
+        top_bar.addWidget(self._lbl_temperature)
+
         layout.addLayout(top_bar)
+
+        # ===== Config bar: Profile, SQ, Step, Range + real-time frame rate & temperature =====
+        config_bar = QHBoxLayout()
+        config_bar.setContentsMargins(0, 4, 0, 4)
+        config_bar.setSpacing(10)
+
+        def _cfg_label(text: str) -> QLabel:
+            lbl = QLabel(text)
+            lbl.setStyleSheet(
+                f"font-size: 11px; color: {C_TEXT_SECONDARY}; border: none; font-weight: 500;"
+            )
+            return lbl
+
+        # Profile
+        config_bar.addWidget(_cfg_label("Profile"))
+        self._cmb_profile = QComboBox()
+        self._cmb_profile.setFixedHeight(28)
+        self._cmb_profile.setFixedWidth(100)
+        self._cmb_profile.addItems(["1", "2", "3", "4", "5"])
+        self._cmb_profile.setCurrentText("1")
+        self._cmb_profile.currentTextChanged.connect(self._on_config_changed)
+        self._cmb_profile.setStyleSheet(
+            "QComboBox { font-size: 12px; border: 1px solid #C6C6C8; border-radius: 6px;"
+            "padding: 2px 6px; background: white; }"
+        )
+        config_bar.addWidget(self._cmb_profile)
+
+        # Signal quality
+        config_bar.addWidget(_cfg_label("SQ(dB)"))
+        sq_slider_layout = QHBoxLayout()
+        sq_slider_layout.setContentsMargins(0, 0, 0, 0)
+        sq_slider_layout.setSpacing(4)
+
+        self._slider_sq = QSlider(Qt.Orientation.Horizontal)
+        self._slider_sq.setRange(10, 40)
+        self._slider_sq.setValue(30)
+        self._slider_sq.setFixedWidth(80)
+        self._slider_sq.setFixedHeight(28)
+        self._slider_sq.valueChanged.connect(self._on_sq_changed)
+        sq_slider_layout.addWidget(self._slider_sq)
+
+        self._lbl_sq_val = QLabel("30")
+        self._lbl_sq_val.setFixedWidth(22)
+        self._lbl_sq_val.setStyleSheet(
+            f"font-size: 12px; font-weight: 600; color: {C_TEXT_PRIMARY}; border: none;"
+        )
+        sq_slider_layout.addWidget(self._lbl_sq_val)
+        config_bar.addLayout(sq_slider_layout)
+
+        # Step length
+        config_bar.addWidget(_cfg_label("Step"))
+        self._cmb_step = QComboBox()
+        self._cmb_step.setFixedHeight(28)
+        self._cmb_step.setFixedWidth(56)
+        self._cmb_step.addItems(["1", "2", "3", "24"])
+        self._cmb_step.setCurrentText("1")
+        self._cmb_step.currentTextChanged.connect(self._on_config_changed)
+        self._cmb_step.setStyleSheet(
+            "QComboBox { font-size: 12px; border: 1px solid #C6C6C8; border-radius: 6px;"
+            "padding: 2px 6px; background: white; }"
+        )
+        config_bar.addWidget(self._cmb_step)
+
+        # Range start/end
+        config_bar.addWidget(_cfg_label("范围(m)"))
+        self._input_start_m = QLineEdit()
+        self._input_start_m.setPlaceholderText("0.1")
+        self._input_start_m.setText("0.1")
+        self._input_start_m.setFixedWidth(44)
+        self._input_start_m.setFixedHeight(28)
+        self._input_start_m.textChanged.connect(self._on_config_changed)
+        self._input_start_m.setStyleSheet(
+            "QLineEdit { font-size: 12px; border: 1px solid #C6C6C8; border-radius: 6px;"
+            "padding: 2px 6px; background: white; }"
+            "QLineEdit:focus { border-color: #007AFF; }"
+        )
+        config_bar.addWidget(self._input_start_m)
+
+        config_bar.addWidget(QLabel("–"))
+
+        self._input_end_m = QLineEdit()
+        self._input_end_m.setPlaceholderText("2.5")
+        self._input_end_m.setText("2.5")
+        self._input_end_m.setFixedWidth(44)
+        self._input_end_m.setFixedHeight(28)
+        self._input_end_m.textChanged.connect(self._on_config_changed)
+        self._input_end_m.setStyleSheet(
+            "QLineEdit { font-size: 12px; border: 1px solid #C6C6C8; border-radius: 6px;"
+            "padding: 2px 6px; background: white; }"
+            "QLineEdit:focus { border-color: #007AFF; }"
+        )
+        config_bar.addWidget(self._input_end_m)
+
+        config_bar.addStretch()
+
+        layout.addLayout(config_bar)
 
         # ===== Main content: left (1/2) + right (1/2) block layout =====
         main_layout = QHBoxLayout()
@@ -615,6 +752,42 @@ class HeightTestWidget(QWidget):
         self._btn_reset.setEnabled(not self._measuring)
         self._btn_snap.setEnabled(self._measuring and self._last_stats.get("n", 0) >= 10)
 
+    # ==================== config helpers ====================
+
+    def _profile_from_combo(self) -> a121.Profile:
+        mapping = {"1": a121.Profile.PROFILE_1, "2": a121.Profile.PROFILE_2,
+                   "3": a121.Profile.PROFILE_3, "4": a121.Profile.PROFILE_4,
+                   "5": a121.Profile.PROFILE_5}
+        return mapping[self._cmb_profile.currentText()]
+
+    def _on_config_changed(self) -> None:
+        """Update config summary label while disconnected."""
+        if self._connected:
+            return  # Need reconnect to apply
+        try:
+            profile = self._profile_from_combo()
+            step = int(self._cmb_step.currentText())
+            sq = int(self._slider_sq.value())
+            start_m = float(self._input_start_m.text() or "0.1")
+            end_m = float(self._input_end_m.text() or "2.5")
+            step_mm = step * 2.5
+            self._lbl_config.setText(
+                f"Profile {profile.value} | 步距={step_mm:.1f}mm | SQ={sq} | "
+                f"范围={int(start_m*100)}-{int(end_m*100)}cm"
+            )
+        except ValueError:
+            pass
+
+    def _on_sq_changed(self, value: int) -> None:
+        self._lbl_sq_val.setText(str(value))
+        self._on_config_changed()
+
+    def _on_temperature(self, temp: int) -> None:
+        self._lbl_temperature.setText(f"温度: {temp} ℃")
+
+    def _on_frame_rate(self, rate: float) -> None:
+        self._lbl_frame_rate.setText(f"帧率: {rate:.1f} Hz")
+
     # ==================== slots ====================
 
     def _on_connect(self) -> None:
@@ -625,7 +798,6 @@ class HeightTestWidget(QWidget):
 
     def _do_connect(self) -> None:
         try:
-            from acconeer.exptool import a121
             from acconeer.exptool.a121.algo.distance import (
                 Detector,
                 DetectorConfig,
@@ -638,14 +810,28 @@ class HeightTestWidget(QWidget):
             )
             self._btn_connect.setEnabled(False)
 
+            # Read config from UI controls
+            profile = self._profile_from_combo()
+            step = int(self._cmb_step.currentText())
+            sq = float(self._slider_sq.value())
+            start_m = float(self._input_start_m.text() or "0.1")
+            end_m = float(self._input_end_m.text() or "2.5")
+
+            # Store for reconnect
+            self._config_profile = profile
+            self._config_step = step
+            self._config_sq = sq
+            self._config_start_m = start_m
+            self._config_end_m = end_m
+
             self._client = a121.Client.open(usb_device=True)
 
             detector_config = DetectorConfig(
-                start_m=0.1,
-                end_m=2.5,
-                max_profile=a121.Profile.PROFILE_1,
-                max_step_length=1,
-                signal_quality=30.0,
+                start_m=start_m,
+                end_m=end_m,
+                max_profile=profile,
+                max_step_length=step,
+                signal_quality=sq,
                 threshold_method=ThresholdMethod.CFAR,
             )
             self._detector = Detector(
@@ -660,7 +846,11 @@ class HeightTestWidget(QWidget):
             self._lbl_status.setStyleSheet(
                 f"color: {C_SUCCESS}; font-weight: 500; font-size: 14px; border: none;"
             )
-            self._lbl_config.setText("Profile 1 | 采样间距 2.5mm | 信号质量 30 | 范围 10-250cm")
+            step_mm = step * 2.5
+            self._lbl_config.setText(
+                f"Profile {profile.value} | 步距={step_mm:.1f}mm | SQ={int(sq)} | "
+                f"范围={int(start_m*100)}-{int(end_m*100)}cm"
+            )
         except Exception as e:
             self._lbl_status.setText(f"连接失败: {e}")
             self._lbl_status.setStyleSheet(
@@ -691,6 +881,8 @@ class HeightTestWidget(QWidget):
             f"color: {C_TEXT_MUTED}; font-weight: 500; font-size: 14px; border: none;"
         )
         self._lbl_config.setText("")
+        self._lbl_frame_rate.setText("帧率: — Hz")
+        self._lbl_temperature.setText("温度: — ℃")
         self._lbl_grade.hide()
         _, unit, _, _, _, _ = self._unit_info()
         self._lbl_distance.setText(f"---- {unit}")
@@ -719,6 +911,8 @@ class HeightTestWidget(QWidget):
         self._worker = _MeasurementWorker(self._detector, self)
         self._worker.sig_distance.connect(self._on_new_distance)
         self._worker.sig_stats.connect(self._on_stats_update)
+        self._worker.sig_temperature.connect(self._on_temperature)
+        self._worker.sig_frame_rate.connect(self._on_frame_rate)
         self._worker.sig_error.connect(self._on_worker_error)
         self._worker.sig_finished.connect(self._on_worker_finished)
         self._worker.start()
@@ -759,6 +953,8 @@ class HeightTestWidget(QWidget):
         self._lbl_range.setText(f"— {unit}")
         self._lbl_count.setText("0")
         self._lbl_dev.setText(f"— {unit}")
+        self._lbl_frame_rate.setText("帧率: — Hz")
+        self._lbl_temperature.setText("温度: — ℃")
 
     def _on_snapshot(self) -> None:
         s = self._last_stats
